@@ -26,7 +26,7 @@
 - 💾 **Portable JSON snapshots** — Capture schema snapshots with `snapshot --dsn ... -o schema.json` for Git versioning and offline audits
 - 🔄 **Offline & live drift detection** — Pure-Python diff engine comparing live databases, saved JSON snapshots, or mixed environments
 - 📝 **Safe SQL generation** — Produces `BEGIN`/`COMMIT`-wrapped migration scripts in the correct dependency order (drop FKs first, create tables before adding columns, etc.)
-- ⚡ **Zero-downtime migrations** — Native `--concurrently` support for `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
+- ⚡ **Zero-downtime migrations** — Native `--concurrently` indexing, two-phase foreign keys (`NOT VALID` + `VALIDATE CONSTRAINT`), lock-timeout guards, and topological DAG dependency ordering (Kahn's algorithm)
 - 🛑 **Destructive change protection** — Safeguard production with `--fail-on-destructive` (`-w`) to exit with code 2 if dropped tables or columns are detected
 - ⏪ **Rollback generator** — Generate reverse / down migrations with `--direction down`
 - 🖥️ **Rich CLI** — Beautiful terminal output powered by [Rich](https://github.com/Textualize/rich)
@@ -204,6 +204,19 @@ schemadrift diff \
   --target "postgres://user:pass@target-host/db" \
   --concurrently
 
+# Zero-downtime safe migration mode (two-phase FKs with NOT VALID + lock_timeout guards)
+schemadrift diff \
+  --source "postgres://user:pass@source-host/db" \
+  --target "postgres://user:pass@target-host/db" \
+  --safe-mode
+
+# Two-phase zero-downtime foreign keys with explicit lock acquisition timeout
+schemadrift diff \
+  --source "postgres://user:pass@source-host/db" \
+  --target "postgres://user:pass@target-host/db" \
+  --two-phase-fk \
+  --lock-timeout "2s" 
+
 # Offline diff: compare a saved JSON snapshot against a live database or another snapshot
 schemadrift diff \
   --source schema-prod.json \
@@ -301,6 +314,7 @@ schemadrift lint --file schema.json --exclude legacy_logs --exclude spatial_ref_
 | **W021** | `WARNING` | `case-sensitive-column-name` | Column identifier contains uppercase characters (`userId`, `createdAt`). PostgreSQL folds unquoted identifiers to lowercase, mandating double-quoting and triggering `column does not exist` errors in raw queries. Use lowercase `snake_case`. |
 | **W022** | `WARNING` | `missing-default-on-audit-timestamp` | Audit timestamp column (`created_at`, `created_on`, `inserted_at`) lacks an automated default expression. Omitting the column during `INSERT` either causes `NOT NULL` violations or stores `NULL`. Use `DEFAULT now()` or `DEFAULT CURRENT_TIMESTAMP`. |
 | **W023** | `WARNING` | `low-cardinality-boolean-index` | Non-unique single-column B-tree index targets a `boolean` column. Low selectivity (~50%) causes the planner to bypass the index while writes incur WAL and VACUUM overhead. Use a partial index (`WHERE col IS TRUE`) or composite index. |
+| **W024** | `WARNING` | `reserved-keyword-table-name` | Table identifier matches a PostgreSQL reserved SQL keyword (`user`, `order`, `group`, `table`, `select`). Requires mandatory double-quoting and triggers syntax errors in raw queries and migrations. Use plural or domain-specific names (`users`, `orders`). |
 
 ---
 
